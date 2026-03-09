@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Planner Finance Outsourcing</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=KoHo:wght@600&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'], koho: ['KoHo', 'sans-serif'] },
+                    colors: { 'uplifting-yellow': 'rgb(248, 175, 95)' }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f5f5f5; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .dropdown-content { max-height: 0; overflow: hidden; transition: max-height 0.2s ease-out; }
+        .dropdown-open .dropdown-content { max-height: 500px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        const e = React.createElement;
+        const { useState, useMemo, useEffect, Fragment } = React;
+
+        // VERVANG DEZE URL DOOR DE URL VAN JE GOOGLE APPS SCRIPT WEB APP
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycby10aicyssnz8akgMSz2pNa-OdZihHJ3bRvY9jatuzpjZAzf7E8MtpaOECEdR1EucTiJw/exec';
+
+        const dateUtils = {
+            fmtM: (d) => new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric' }).format(d),
+            fmtD: (d) => new Intl.DateTimeFormat('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' }).format(d),
+            fmtS: (d) => new Intl.DateTimeFormat('nl-NL', { day: 'numeric', month: 'short' }).format(d),
+            fmtW: (d) => new Intl.DateTimeFormat('nl-NL', { weekday: 'long' }).format(d),
+            isSameD: (d1, d2) => d1.toDateString() === d2.toDateString(),
+            isSameM: (d1, d2) => d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear(),
+            startM: (d) => new Date(d.getFullYear(), d.getMonth(), 1),
+            endM: (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0),
+            addM: (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1),
+            addD: (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; },
+            startW: (d) => {
+                const r = new Date(d);
+                const day = r.getDay();
+                const diff = r.getDate() - day + (day === 0 ? -6 : 1);
+                return new Date(r.setDate(diff));
+            },
+            getW: (d) => {
+                const r = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                r.setUTCDate(r.getUTCDate() + 4 - (r.getUTCDay() || 7));
+                return Math.ceil((((r - new Date(Date.UTC(r.getUTCFullYear(), 0, 1))) / 86400000) + 1) / 7);
+            }
+        };
+
+        const Icons = {
+            ChevronLeft: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "m15 18-6-6 6-6" })),
+            ChevronRight: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "m9 18 6-6-6-6" })),
+            Calendar: () => e('svg', { width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('rect', { width: 18, height: 18, x: 3, y: 4, rx: 2 }), e('path', { d: "M16 2v4M8 2v4M3 10h18" })),
+            Check: () => e('svg', { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 4 }, e('polyline', { points: "20 6 9 17 4 12" })),
+            Inbox: () => e('svg', { width: 48, height: 48, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "M22 12h-6l-2 3h-4l-2-3H2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7zM5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" })),
+            Clock: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('circle', { cx: 12, cy: 12, r: 10 }), e('path', { d: "M12 6v6l4 2" })),
+            Briefcase: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('rect', { width: 20, height: 14, x: 2, y: 7, rx: 2 }), e('path', { d: "M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" })),
+            User: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" }), e('circle', { cx: 12, cy: 7, r: 4 })),
+            FileText: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }), e('path', { d: "M14 2v6h6M16 13H8M16 17H8M10 9H8" })),
+            Grid: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('rect', { width: 7, height: 7, x: 3, y: 3 }), e('rect', { width: 7, height: 7, x: 14, y: 3 }), e('rect', { width: 7, height: 7, x: 14, y: 14 }), e('rect', { width: 7, height: 7, x: 3, y: 14 })),
+            CheckCircle: () => e('svg', { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('circle', { cx: 12, cy: 12, r: 10 }), e('path', { d: "m9 12 2 2 4-4" })),
+            Down: () => e('svg', { width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "m6 9 6 6 6-6" })),
+            List: () => e('svg', { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, e('path', { d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" }))
+        };
+
+        const catStyles = {
+            'Mailbox': { c: 'bg-blue-50 text-blue-700 border-blue-100', i: Icons.Clock },
+            'Inkopen': { c: 'bg-emerald-50 text-emerald-700 border-emerald-100', i: Icons.Briefcase },
+            'Bank': { c: 'bg-amber-50 text-amber-700 border-amber-100', i: Icons.Grid },
+            'Salarissen': { c: 'bg-purple-50 text-purple-700 border-purple-100', i: Icons.User },
+            'Kas': { c: 'bg-rose-50 text-rose-700 border-rose-100', i: Icons.Grid },
+            'Afsluiting': { c: 'bg-indigo-50 text-indigo-700 border-indigo-100', i: Icons.CheckCircle },
+            'Facturatie': { c: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100', i: Icons.FileText },
+            'Belasting': { c: 'bg-orange-50 text-orange-700 border-orange-100', i: Icons.FileText }
+        };
+
+        const RAW_TASKS = [
+            ["1","MMM","Mailbox bijwerken","Mailbox","Dagelijks","","Frans"],
+            ["2","MMM","SpendCloud bijwerken","Inkopen","Dagelijks","","Frans"],
+            ["3","MMM","Bank coderen","Bank","Wekelijks","Maandag","Frans"],
+            ["4","MMM","Inkoopfacturen betalen","Inkopen","Wekelijks","Maandag","Frans"],
+            ["5","MMM","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Frans"],
+            ["6","MMM","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Frans"],
+            ["7","MMM","Kas boeken","Kas","Maandelijks","Eerste week van de volgende maand","Frans"],
+            ["8","MMM","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Frans"],
+            ["9","Cliëntenbelang","Mailbox bijwerken","Mailbox","Dagelijks","","Frans"],
+            ["10","Cliëntenbelang","SpendCloud bijwerken","Inkopen","Dagelijks","","Frans"],
+            ["11","Cliëntenbelang","Bank coderen","Bank","Wekelijks","Donderdag","Frans"],
+            ["12","Cliëntenbelang","Inkoopfacturen betalen","Inkopen","Wekelijks","Donderdag","Frans"],
+            ["13","Cliëntenbelang","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Frans"],
+            ["14","Zorg voor Zuid","Loonheffing in SpendCloud","Salarissen","Maandelijks","Laatste week van de maand","Rens"],
+            ["15","Cliëntenbelang","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Frans"],
+            ["16","Cliëntenbelang","Debiteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Frans"],
+            ["17","Cliëntenbelang","Facturatie uren @ zorgkantoren","Facturatie","Maandelijks","Eerste week van de volgende maand","Frans"],
+            ["18","Cliëntenbelang","Vrijwilligersvergoeding betalen","Bank","Maandelijks","Eerste week van de volgende maand","Frans"],
+            ["19","Cliëntenbelang","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Frans"],
+            ["20","Cliëntenbelang","Facturatie uren @ samenwerkingsverbanden","Facturatie","Per kwartaal","de eerste week van de maand na afloop van een kwartaal","Frans"],
+            ["21","Cliëntenbelang","Vrijwilligers vergoeding klaar zetten","Bank","Jaarlijks","De laatst week voor kerstmis","Frans"],
+            ["22","Cliëntenbelang","Projecten omzetten in SpendCloud","Inkopen","Jaarlijks","De eerste week van het nieuwe kalenderjaar","Frans"],
+            ["23","AHA","Mailbox bijwerken","Mailbox","Dagelijks","","Frans"],
+            ["24","AHA","SpendCloud bijwerken","Inkopen","Dagelijks","","Frans"],
+            ["25","AHA","Bank coderen","Bank","Wekelijks","Woensdag","Frans"],
+            ["26","AHA","Inkoopfacturen betalen","Inkopen","Wekelijks","Woensdag","Frans"],
+            ["27","AHA","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Frans"],
+            ["28","AHA","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Frans"],
+            ["29","AHA","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Frans"],
+            ["30","AHA","Facturen onderweg","Afsluiting","Per 4 maanden","10e werkdag","Frans"],
+            ["31","Huisartsen+Punt","Mailbox bijwerken","Mailbox","Dagelijks","","Frans"],
+            ["32","Huisartsen+Punt","SpendCloud bijwerken","Inkopen","Dagelijks","","Frans"],
+            ["33","Huisartsen+Punt","Bank coderen","Bank","Wekelijks","Woensdag","Frans"],
+            ["34","Huisartsen+Punt","Inkoopfacturen betalen","Inkopen","Wekelijks","Woensdag","Frans"],
+            ["35","Huisartsen+Punt","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Frans"],
+            ["36","Huisartsen+Punt","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Frans"],
+            ["37","Huisartsen+Punt","Factruatie CAK","Facturatie","Maandelijks","Eerste week van de volgende maand","Frans"],
+            ["38","Huisartsen+Punt","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Frans"],
+            ["39","Huisartsen+Punt","Facturatie WLZ","Facturatie","Per kwartaal","eerste week","Frans"],
+            ["40","Huisartsen+Punt","Facturen onderweg","Afsluiting","Per kwartaal","10e werkdag","Frans"],
+            ["41","Zorg voor Zuid","Mailbox bijwerken","Mailbox","Dagelijks","","Rens"],
+            ["42","Zorg voor Zuid","SpendCloud bijwerken","Inkopen","Dagelijks","","Rens"],
+            ["43","Zorg voor Zuid","Bank coderen","Bank","Wekelijks","Vrijdag","Rens"],
+            ["44","Zorg voor Zuid","Inkoopfacturen betalen","Inkopen","Wekelijks","Vrijdag","Rens"],
+            ["45","Zorg voor Zuid","Betalen salarissen","Salarissen","Maandelijks","Vanaf de 18e","Rens"],
+            ["46","Zorg voor Zuid","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Rens"],
+            ["47","Zorg voor Zuid","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Rens"],
+            ["48","ZMBR","Mailbox bijwerken","Mailbox","Dagelijks","","Mustafa"],
+            ["49","ZMBR","SpendCloud codering","Inkopen","Wekelijks","Dinsdag","Mustafa"],
+            ["50","ZMBR","Inkoopfacturen betalen","Inkopen","Wekelijks","Dinsdag","Mustafa"],
+            ["51","ZMBR","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["52","ZMBR","Debiteurenbeheer","Facturatie","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["53","ZMBR","Bank coderen","Bank","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["54","ZMBR","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Mustafa"],
+            ["55","ZMBR","BTW aangifte","Belasting","Per kwartaal","een na laatste week","Erik"],
+            ["56","Lichtpunt","Mailbox bijwerken","Mailbox","Dagelijks","","Mustafa"],
+            ["57","Lichtpunt","SpendCloud bijwerken","Inkopen","Dagelijks","","Mustafa"],
+            ["58","Lichtpunt","Bank coderen","Bank","Wekelijks","Dinsdag","Mustafa"],
+            ["59","Lichtpunt","Inkoopfacturen betalen","Inkopen","Wekelijks","Dinsdag","Mustafa"],
+            ["60","Lichtpunt","Betalen salarissen","Salarissen","Maandelijks","Vanaf de 14e","Mustafa"],
+            ["61","Lichtpunt","Loonheffing in SpendCloud","Salarissen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["62","Lichtpunt","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["63","Lichtpunt","Voedingsgelden betalen","Bank","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["64","Lichtpunt","Productie boeken","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["65","Lichtpunt","Kas & Pas afsluiten","Kas","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["66","Lichtpunt","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Mustafa"],
+            // Bergweide
+            ["117","Bergweide","Mailbox bijwerken","Mailbox","Dagelijks","","Mustafa"],
+            ["118","Bergweide","SpendCloud bijwerken","Inkopen","Dagelijks","","Mustafa"],
+            ["119","Bergweide","Bank coderen","Bank","Wekelijks","Dinsdag","Mustafa"],
+            ["120","Bergweide","Inkoopfacturen betalen","Inkopen","Wekelijks","Dinsdag","Mustafa"],
+            ["121","Bergweide","Betalen salarissen","Salarissen","Maandelijks","Vanaf de 15e en voor de 21e","Mustafa"],
+            ["122","Bergweide","Loonheffing in SpendCloud","Salarissen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["123","Bergweide","Loonjournaalpost inlezen","Salarissen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["124","Bergweide","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["125","Bergweide","Debiteurenbeheer","Facturatie","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["126","Bergweide","Kas & Pas afsluiten","Kas","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["127","Bergweide","Huren facturen & incasso","Facturatie","Maandelijks","De 25e van de maand er voor","Mustafa"],
+            ["128","Bergweide","Factureren Ziggo","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["129","Bergweide","Facturerern VPT","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["130","Bergweide","Factureren Pedicure Clarahuis","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["131","Bergweide","Factureren Wachtdienst en VPT Congregatie","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["132","Bergweide","Factureren Restaurant (Compad)","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["133","Bergweide","Factureren Huishoudelijke hulp","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["134","Bergweide","Facturen onderweg","Inkopen","Maandelijks","op de 6e van de maand","Mustafa"],
+            ["135","Bergweide","Productie boeken","Facturatie","Maandelijks","Tweede week van de volgende maand","Nicoline"],
+            ["136","Bergweide","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Mustafa"],
+            ["137","Bergweide","Personeelsvereniging betalen","Bank","Per kwartaal","de eerste week van de maand na afloop van een kwartaal","Mustafa"],
+            ["138","Bergweide","BTW aangifte","Belasting","Per kwartaal","de een na laatste week van de maand na afloop van een kwartaal","Nicoline"],
+            ["139","Bergweide","Factureren Salon Bertine","Facturatie","Jaarlijks","eerste week van januari","Mustafa"],
+            ["140","Bergweide","Factureren N. van Boekel","Facturatie","Jaarlijks","laatste week van december","Mustafa"],
+            // Vitala+
+            ["141","Vitala+","Mailbox bijwerken","Mailbox","Dagelijks","","Mustafa"],
+            ["142","Vitala+","SpendCloud bijwerken","Inkopen","Dagelijks","","Mustafa"],
+            ["143","Vitala+","Bank coderen","Bank","Wekelijks","Woensdag","Mustafa"],
+            ["144","Vitala+","Banksaldo doorgeven","Bank","Wekelijks","Woensdag","Mustafa"],
+            ["145","Vitala+","Inkoopfacturen betalen","Inkopen","Wekelijks","Woensdag","Mustafa"],
+            ["146","Vitala+","Crediteurenbeheer","Inkopen","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["147","Vitala+","Debiteurenbeheer","Facturatie","Maandelijks","Laatste week van de maand","Mustafa"],
+            ["148","Vitala+","Factureren Envida","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["149","Vitala+","Factureren aanleunwoningen Envida","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["150","Vitala+","Factureren MUMC","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["151","Vitala+","Factureren Netwerk Acute Zorg Limburg","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["152","Vitala+","Factureren Fysio Zuid Groep","Facturatie","Maandelijks","Eerste week van de volgende maand","Mustafa"],
+            ["153","Vitala+","Facturen onderweg","Inkopen","Maandelijks","op de 6e van de maand","Mustafa"],
+            ["154","Vitala+","Productie boeken","Facturatie","Maandelijks","Tweede week van de volgende maand","Nicoline"],
+            ["155","Vitala+","Caseware","Afsluiting","Maandelijks","Tweede week van de volgende maand","Mustafa"],
+            ["156","Vitala+","Factureren Smile Fitness","Facturatie","Per kwartaal","de eerste week van de maand na afloop van een kwartaal","Mustafa"],
+            ["157","Vitala+","Vrijwilligers vergoeding betalen","Bank","Per kwartaal","de eerste week van de maand na afloop van een kwartaal","Mustafa"],
+            ["158","Vitala+","BTW aangifte","Belasting","Per kwartaal","de een na laatste week van de maand na afloop van een kwartaal","Nicoline"]
+        ];
+
+        const TASKS = RAW_TASKS.map(r => ({ id: r[0], client: r[1], title: r[2], category: r[3], frequency: r[4], frequencyDetail: r[5], assignee: r[6] }));
+
+        function isFirstW(d, m) {
+            const s = dateUtils.startW(d);
+            let c = 0;
+            for(let i=0; i<5; i++) if(dateUtils.addD(s, i).getMonth() === m.getMonth()) c++;
+            return c >= 3;
+        }
+
+        function generateSchedule(m) {
+            const res = [];
+            const start = dateUtils.startM(m);
+            const end = dateUtils.endM(m);
+            const days = [];
+            let c = dateUtils.addD(start, -14);
+            for(let i=0; i<60; i++) { days.push(new Date(c)); c.setDate(c.getDate()+1); }
+
+            TASKS.forEach(t => {
+                let check = (d) => d.getDay() === 1;
+                if(t.assignee === 'Frans') {
+                    if(t.client === 'MMM') check = (d) => d.getDay() === 1;
+                    else if(t.client === 'AHA' || t.client === 'Huisartsen+Punt') check = (d) => d.getDay() === 3;
+                    else check = (d) => d.getDay() === 4;
+                } else if(t.assignee === 'Rens') check = (d) => d.getDay() === 5;
+                else if(t.assignee === 'Mustafa') {
+                    if(t.client === 'ZMBR' || t.client === 'Lichtpunt' || t.client === 'Bergweide') check = (d) => d.getDay() === 2;
+                    else if(t.client === 'Vitala+') check = (d) => d.getDay() === 3;
+                } else if(t.assignee === 'Nicoline') {
+                    if(t.client === 'Bergweide') check = (d) => d.getDay() === 2;
+                    else if(t.client === 'Vitala+') check = (d) => d.getDay() === 3;
+                } else check = (d) => d.getDay() === 2;
+
+                days.forEach(d => {
+                    if(!dateUtils.isSameM(d, m)) return;
+                    let add = false;
+                    const dow = d.getDay();
+                    const dom = d.getDate();
+
+                    if(t.frequency === 'Dagelijks') {
+                        if(t.assignee === 'Frans') add = [1,3,4].includes(dow);
+                        else if(t.assignee === 'Rens') add = [3,5].includes(dow);
+                        else add = [2,3,5].includes(dow);
+                    } else if(t.frequency === 'Wekelijks') {
+                        const target = t.frequencyDetail.toLowerCase();
+                        const current = dateUtils.fmtW(d).toLowerCase();
+                        if(current === target) add = true;
+                    } else if(t.frequency === 'Maandelijks') {
+                        if(!check(d)) return;
+                        if(t.frequencyDetail.includes('Laatste week')) {
+                            if(isFirstW(dateUtils.addD(d, 7), d) === false) add = true;
+                        } else if(t.frequencyDetail.includes('Eerste week')) {
+                            if(isFirstW(d, d)) {
+                                const first = days.find(x => dateUtils.isSameM(x, d) && isFirstW(x, d) && check(x));
+                                if(dateUtils.isSameD(d, first)) add = true;
+                            }
+                        } else if(t.frequencyDetail.includes('Tweede week')) {
+                            const first = days.find(x => dateUtils.isSameM(x, d) && isFirstW(x, d) && check(x));
+                            if(first && dateUtils.isSameD(d, dateUtils.addD(first, 7))) add = true;
+                        } else if(t.frequencyDetail.includes('Vanaf de')) {
+                            const startD = parseInt(t.frequencyDetail.match(/\d+/)[0]);
+                            if(dom >= startD && dom < startD + 7) {
+                                const first = days.find(x => dateUtils.isSameM(x, d) && x.getDate() >= startD && check(x));
+                                if(dateUtils.isSameD(d, first)) add = true;
+                            }
+                        }
+                    } else if(t.frequency === 'Jaarlijks') {
+                        if(t.frequencyDetail === 'eerste week van januari') {
+                            if(d.getMonth() === 0 && isFirstW(d, d)) {
+                                const first = days.find(x => x.getMonth() === 0 && isFirstW(x, x) && check(x));
+                                if(dateUtils.isSameD(d, first)) add = true;
+                            }
+                        } else if(t.frequencyDetail === 'laatste week van december') {
+                            if(d.getMonth() === 11 && isFirstW(dateUtils.addD(d, 7), d) === false) {
+                                const last = days.filter(x => x.getMonth() === 11 && isFirstW(dateUtils.addD(x, 7), x) === false && check(x)).pop();
+                                if(dateUtils.isSameD(d, last)) add = true;
+                            }
+                        } else if(t.frequencyDetail.includes('kerstmis')) {
+                            const dec25 = new Date(d.getFullYear(), 11, 25);
+                            const weekBefore = dateUtils.startW(dateUtils.addD(dec25, -7));
+                            if(dateUtils.isSameD(dateUtils.startW(d), weekBefore) && check(d)) add = true;
+                        }
+                    } else if(t.frequency === 'Per kwartaal' && [0,3,6,9].includes(d.getMonth())) {
+                        if(isFirstW(d, d)) {
+                            const first = days.find(x => dateUtils.isSameM(x, d) && isFirstW(x, d) && check(x));
+                            if(dateUtils.isSameD(d, first)) add = true;
+                        }
+                    }
+
+                    if(add) res.push({ ...t, date: new Date(d), instanceId: `${t.id}-${d.toISOString().split('T')[0]}` });
+                });
+            });
+            return res.sort((a,b) => a.date - b.date);
+        }
+
+        const App = () => {
+            const [cur, setCur] = useState(new Date(2026, 2, 1));
+            const [sel, setSel] = useState(new Date(2026, 2, 9));
+            const [view, setView] = useState('day');
+            const [done, setDone] = useState(new Set());
+            const [mon, setMon] = useState(false);
+            const [fComp, setFComp] = useState('all');
+            const allAssignees = useMemo(() => Array.from(new Set(TASKS.map(t => t.assignee))).sort(), []);
+            const allClients = useMemo(() => Array.from(new Set(TASKS.map(t => t.client))).sort(), []);
+            
+            const [fCli, setFCli] = useState(new Set(allClients));
+            const [fAss, setFAss] = useState(new Set(['Mustafa']));
+            const [tCli, setTCli] = useState(new Set(fCli));
+            const [tAss, setTAss] = useState(new Set(['Mustafa']));
+            const [dCli, setDCli] = useState(false);
+            const [dAss, setDAss] = useState(false);
+
+            useEffect(() => {
+                const fetchData = () => {
+                    if (WEB_APP_URL.includes('XXXXXXXXX')) return;
+                    
+                    fetch(WEB_APP_URL)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (Array.isArray(data)) {
+                                setDone(new Set(data));
+                            }
+                        })
+                        .catch(err => console.error('Fout bij ophalen data:', err));
+                };
+
+                fetchData();
+                const interval = setInterval(fetchData, 30000); // Elke 30 seconden synchroniseren
+                return () => clearInterval(interval);
+            }, []);
+
+            useEffect(() => {
+                if (done.size > 0) {
+                    localStorage.setItem('p-done', JSON.stringify(Array.from(done)));
+                }
+            }, [done]);
+
+            const sched = useMemo(() => generateSchedule(cur), [cur]);
+            const base = useMemo(() => {
+                if (mon) {
+                    const today = new Date();
+                    today.setHours(23, 59, 59, 999);
+                    const startMonitoring = new Date(2026, 2, 1); // 1-3-2026
+                    
+                    return sched.filter(t => 
+                        fCli.has(t.client) && 
+                        fAss.has(t.assignee) &&
+                        t.frequency !== 'Dagelijks' &&
+                        t.date >= startMonitoring &&
+                        t.date <= today
+                    );
+                }
+                let r = sched.filter(t => fCli.has(t.client) && fAss.has(t.assignee));
+                if(view === 'day') r = r.filter(t => dateUtils.isSameD(t.date, sel));
+                else if(view === 'week') {
+                    const s = dateUtils.startW(sel), e = dateUtils.addD(s, 6);
+                    r = r.filter(t => t.date >= s && t.date <= e);
+                }
+                return r;
+            }, [sched, view, sel, fCli, fAss, mon]);
+
+            const final = useMemo(() => {
+                const daily = base.filter(t => t.frequency === 'Dagelijks');
+                const other = base.filter(t => t.frequency !== 'Dagelijks');
+                const groups = {};
+                daily.forEach(t => {
+                    const k = `${t.title}-${t.date.toISOString().split('T')[0]}`;
+                    if(!groups[k]) groups[k] = [];
+                    groups[k].push(t);
+                });
+                const procDaily = Object.values(groups).map(g => g.length > 1 ? { ...g[0], isG: true, sub: g, instanceId: `g-${g[0].title}-${g[0].date.toISOString().split('T')[0]}` } : g[0]);
+                let r = [...procDaily, ...other];
+                if(mon) r = r.filter(t => t.frequency !== 'Dagelijks');
+                if(fComp === 'open') r = r.filter(t => t.isG ? !t.sub.every(s => done.has(s.instanceId)) : !done.has(t.instanceId));
+                else if(fComp === 'completed') r = r.filter(t => t.isG ? t.sub.every(s => done.has(s.instanceId)) : done.has(t.instanceId));
+                return r.sort((a,b) => a.date - b.date);
+            }, [base, mon, fComp, done]);
+
+            const stats = useMemo(() => {
+                const t = base.length, c = base.filter(x => done.has(x.instanceId)).length;
+                return { t, c, p: t > 0 ? Math.round((c/t)*100) : 0 };
+            }, [base, done]);
+
+            const toggle = (id) => {
+                let isNowDone = false;
+                setDone(p => {
+                    const n = new Set(p);
+                    if (n.has(id)) {
+                        n.delete(id);
+                        isNowDone = false;
+                    } else {
+                        n.add(id);
+                        isNowDone = true;
+                        confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#F8AF5F', '#ffffff'] });
+                    }
+                    return n;
+                });
+
+                // Verstuur naar Google Sheets
+                if (!WEB_APP_URL.includes('XXXXXXXXX')) {
+                    fetch(WEB_APP_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', // Belangrijk voor Google Apps Script redirects
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, isDone: isNowDone })
+                    }).catch(err => console.error('Fout bij opslaan:', err));
+                }
+            };
+
+            const apply = () => { setFCli(new Set(tCli)); setFAss(new Set(tAss)); setDCli(false); setDAss(false); };
+
+            return e('div', { className: "min-h-screen bg-[#f5f5f5] text-slate-900" },
+                e('header', { className: "bg-white border-b sticky top-0 z-20" },
+                    e('div', { className: "max-w-7xl mx-auto px-4 h-16 flex justify-between items-center" },
+                        e('div', { className: "flex items-center gap-3" },
+                            e('div', { className: "w-10 h-10 bg-uplifting-yellow rounded-xl flex items-center justify-center text-white shadow-lg" }, e(Icons.Calendar)),
+                            e('div', null,
+                                e('h1', { className: "text-xl font-bold font-koho" }, "Team Planner"),
+                                e('div', { className: "flex items-center gap-2 text-[10px] font-black uppercase tracking-tighter" },
+                                    e('button', { onClick: () => { setDAss(!dAss); setDCli(false); }, className: `hover:text-slate-900 ${dAss ? "text-uplifting-yellow" : "text-slate-400"}` }, `Medewerkers (${tAss.size})`),
+                                    e('span', { className: "text-slate-200" }, "|"),
+                                    e('button', { onClick: () => { setDCli(!dCli); setDAss(false); }, className: `hover:text-slate-900 ${dCli ? "text-uplifting-yellow" : "text-slate-400"}` }, `Klanten (${tCli.size})`),
+                                    (tCli.size !== fCli.size || tAss.size !== fAss.size) && e('button', { onClick: apply, className: "ml-2 text-uplifting-yellow bg-uplifting-yellow/10 px-2 py-0.5 rounded" }, "Verversen")
+                                )
+                            )
+                        ),
+                        e('div', { className: "flex items-center gap-3" },
+                            e('div', { className: "flex bg-slate-100 p-1 rounded-lg" },
+                                ['day', 'week', 'month'].map(v => e('button', { key: v, onClick: () => setView(v), className: `px-3 py-1 text-xs font-bold rounded-md transition-all ${view === v ? "bg-white text-uplifting-yellow shadow-sm" : "text-slate-500 hover:text-slate-800"}` }, v === 'day' ? 'Dag' : v === 'week' ? 'Week' : 'Maand'))
+                            ),
+                            e('button', { onClick: () => setMon(!mon), className: `flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${mon ? "bg-uplifting-yellow text-white border-uplifting-yellow shadow-md" : "bg-white text-slate-700 border-slate-200 hover:border-uplifting-yellow"}` }, e(Icons.List), "Monitoring")
+                        )
+                    ),
+                    dAss && e('div', { className: "absolute top-16 left-4 bg-white border rounded-xl shadow-xl p-3 z-30 grid grid-cols-2 gap-2 w-64" },
+                        e('div', { className: "col-span-2 flex justify-between items-center mb-1 px-1" },
+                            e('span', { className: "text-[10px] font-black uppercase text-slate-400" }, "Medewerkers"),
+                            e('div', { className: "flex gap-2" },
+                                e('button', { onClick: () => setTAss(new Set(allAssignees)), className: "text-[10px] font-black uppercase text-slate-400 hover:text-uplifting-yellow" }, "Alles selecteren"),
+                                e('span', { className: "text-slate-200" }, "|"),
+                                e('button', { onClick: () => setTAss(new Set()), className: "text-[10px] font-black uppercase text-slate-400 hover:text-uplifting-yellow" }, "Selectie opheffen")
+                            )
+                        ),
+                        allAssignees.map(a => e('button', { key: a, onClick: () => { const n = new Set(tAss); n.has(a) ? n.delete(a) : n.add(a); setTAss(n); }, className: `px-3 py-1.5 text-xs rounded-lg border text-left flex justify-between items-center ${tAss.has(a) ? "bg-uplifting-yellow/10 border-uplifting-yellow text-uplifting-yellow" : "border-slate-100 text-slate-600"}` }, a, tAss.has(a) && e(Icons.Check)))
+                    ),
+                    dCli && e('div', { className: "absolute top-16 left-32 bg-white border rounded-xl shadow-xl p-3 z-30 grid grid-cols-2 gap-2 w-72 max-h-96 overflow-y-auto custom-scrollbar" },
+                        e('div', { className: "col-span-2 flex justify-between items-center mb-1 px-1" },
+                            e('span', { className: "text-[10px] font-black uppercase text-slate-400" }, "Klanten"),
+                            e('div', { className: "flex gap-2" },
+                                e('button', { onClick: () => setTCli(new Set(allClients)), className: "text-[10px] font-black uppercase text-slate-400 hover:text-uplifting-yellow" }, "Alles selecteren"),
+                                e('span', { className: "text-slate-200" }, "|"),
+                                e('button', { onClick: () => setTCli(new Set()), className: "text-[10px] font-black uppercase text-slate-400 hover:text-uplifting-yellow" }, "Selectie opheffen")
+                            )
+                        ),
+                        allClients.map(c => e('button', { key: c, onClick: () => { const n = new Set(tCli); n.has(c) ? n.delete(c) : n.add(c); setTCli(n); }, className: `px-3 py-1.5 text-xs rounded-lg border text-left flex justify-between items-center ${tCli.has(c) ? "bg-uplifting-yellow/10 border-uplifting-yellow text-uplifting-yellow" : "border-slate-100 text-slate-600"}` }, c, tCli.has(c) && e(Icons.Check)))
+                    )
+                ),
+                e('main', { className: "max-w-7xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8" },
+                    e('div', { className: "w-full lg:w-72 flex-shrink-0 space-y-6" },
+                        e('div', { className: "bg-white rounded-2xl border p-5 shadow-sm" },
+                            e('div', { className: "flex justify-between items-center mb-4" },
+                                e('h2', { className: "font-bold text-sm" }, dateUtils.fmtM(cur)),
+                                e('div', { className: "flex gap-1" },
+                                    e('button', { onClick: () => setCur(dateUtils.addM(cur, -1)), className: "p-1 hover:bg-slate-100 rounded" }, e(Icons.ChevronLeft)),
+                                    e('button', { onClick: () => setCur(dateUtils.addM(cur, 1)), className: "p-1 hover:bg-slate-100 rounded" }, e(Icons.ChevronRight))
+                                )
+                            ),
+                            e('div', { className: "grid grid-cols-7 gap-1 text-[10px] font-bold text-slate-300 text-center mb-2" }, ['M','D','W','D','V','Z','Z'].map(d => e('span', { key: d }, d))),
+                            e('div', { className: "grid grid-cols-7 gap-1" }, (() => {
+                                const s = dateUtils.startW(dateUtils.startM(cur)), days = [];
+                                let c = new Date(s);
+                                for(let i=0; i<42; i++) { days.push(new Date(c)); c.setDate(c.getDate()+1); }
+                                return days.map(d => {
+                                    const isS = dateUtils.isSameD(d, sel), isM = dateUtils.isSameM(d, cur), has = sched.some(t => dateUtils.isSameD(t.date, d) && fCli.has(t.client) && fAss.has(t.assignee));
+                                    return e('button', { key: d.toISOString(), onClick: () => setSel(d), className: `aspect-square flex flex-col items-center justify-center rounded-lg text-xs font-bold relative ${!isM ? "text-slate-200" : isS ? "bg-uplifting-yellow text-white shadow-md" : "hover:bg-slate-50"}` }, d.getDate(), has && !isS && e('span', { className: "absolute bottom-1 w-1 h-1 bg-uplifting-yellow rounded-full" }));
+                                });
+                            })())
+                        ),
+                        e('div', { className: "bg-uplifting-yellow rounded-2xl p-5 shadow-sm text-slate-900" },
+                            e('h3', { className: "text-[10px] font-black uppercase tracking-widest mb-3 opacity-70" }, "Voortgang"),
+                            e('div', { className: "flex justify-between text-sm font-bold mb-2" }, e('span', null, "Voltooid"), e('span', null, `${stats.c}/${stats.t}`)),
+                            e('div', { className: "w-full bg-black/10 h-2 rounded-full overflow-hidden" }, e('div', { className: "h-full bg-white transition-all duration-500", style: { width: `${stats.p}%` } })),
+                            e('p', { className: "text-[10px] font-bold mt-2 opacity-60 text-center" }, `${stats.p}% KLAAR`)
+                        )
+                    ),
+                    e('div', { className: "flex-grow space-y-6" },
+                        e('div', { className: "flex flex-col sm:flex-row sm:items-end justify-between gap-4" },
+                            e('div', null,
+                                e('h2', { className: "text-2xl font-bold font-koho" }, view === 'day' ? dateUtils.fmtD(sel) : view === 'week' ? `Week ${dateUtils.getW(sel)}` : `Planning ${dateUtils.fmtM(cur)}`),
+                                e('p', { className: "text-slate-400 text-xs font-bold uppercase" }, `${final.length} taken gevonden`)
+                            ),
+                            e('div', { className: "flex bg-white p-1 rounded-lg border text-[10px] font-black uppercase" },
+                                ['all', 'open', 'completed'].map(f => e('button', { key: f, onClick: () => setFComp(f), className: `px-3 py-1 rounded-md transition-all ${fComp === f ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-600"}` }, f === 'all' ? 'Alle' : f === 'open' ? 'Open' : 'Gedaan'))
+                            )
+                        ),
+                        final.length > 0 ? e('div', { className: "space-y-4" }, final.map(t => {
+                            const style = catStyles[t.category] || { c: 'bg-slate-50', i: Icons.Grid };
+                            if(t.isG) {
+                                const allD = t.sub.every(s => done.has(s.instanceId));
+                                return e('div', { key: t.instanceId, className: `bg-white p-5 rounded-2xl border transition-all ${allD ? "opacity-50 border-emerald-100 bg-emerald-50/20" : "border-slate-200 shadow-sm"}` },
+                                    e('div', { className: "flex items-center gap-4 mb-4" },
+                                        e('div', { className: `w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${style.c}` }, e(style.i)),
+                                        e('div', null, e('p', { className: "text-[10px] font-black uppercase text-slate-300" }, `Groep • ${t.assignee}`), e('h3', { className: `font-bold ${allD ? "line-through" : ""}` }, t.title))
+                                    ),
+                                    e('div', { className: "grid grid-cols-2 sm:grid-cols-4 gap-2" }, t.sub.map(s => {
+                                        const d = done.has(s.instanceId);
+                                        return e('button', { key: s.instanceId, onClick: () => toggle(s.instanceId), className: `flex items-center gap-2 p-2 rounded-xl border text-[10px] font-black uppercase transition-all ${d ? "bg-emerald-500 border-emerald-500 text-white" : "bg-slate-50 border-slate-100 text-slate-400 hover:border-uplifting-yellow/50"}` },
+                                            e('div', { className: `w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${d ? "bg-white text-emerald-500" : "bg-white border-slate-200"}` }, d && e(Icons.Check)), e('span', { className: "truncate" }, s.client)
+                                        );
+                                    }))
+                                );
+                            }
+                            const d = done.has(t.instanceId);
+                            return e('div', { key: t.instanceId, className: `bg-white p-5 rounded-2xl border flex items-center gap-4 transition-all ${d ? "opacity-50 border-emerald-100 bg-emerald-50/20" : "border-slate-200 shadow-sm hover:border-uplifting-yellow/30"}` },
+                                e('div', { className: `w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${style.c}` }, e(style.i)),
+                                e('div', { className: "flex-grow min-w-0" }, e('p', { className: "text-[10px] font-black uppercase text-slate-300" }, `${t.client} • ${t.assignee} • ${t.frequency}`), e('h3', { className: `font-bold truncate ${d ? "line-through text-slate-400" : ""}` }, t.title)),
+                                (view !== 'day' || mon) && e('div', { className: "text-right hidden sm:block shrink-0" }, e('p', { className: "text-xs font-bold" }, dateUtils.fmtS(t.date)), e('p', { className: "text-[10px] font-bold text-slate-300 uppercase" }, dateUtils.fmtW(t.date))),
+                                e('button', { onClick: () => toggle(t.instanceId), className: `w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${d ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-200 hover:border-uplifting-yellow"}` }, d ? e(Icons.Check) : e('div', { className: "w-1.5 h-1.5 bg-slate-200 rounded-full" }))
+                            );
+                        })) : e('div', { className: "bg-white rounded-3xl border border-dashed p-16 text-center text-slate-300" }, e(Icons.Inbox), e('p', { className: "mt-4 font-bold uppercase text-xs tracking-widest" }, "Geen taken gevonden"))
+                    )
+                )
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+    </script>
+</body>
+</html>
